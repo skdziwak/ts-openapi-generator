@@ -43,7 +43,7 @@ func main() {
 
 	writer := NewCodeFileWriter(*outputFolder)
 
-	generator := &TsGenerator{}
+	generator := NewTsGenerator()
 	Generate(generator, spec, writer)
 
 }

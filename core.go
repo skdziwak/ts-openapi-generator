@@ -40,7 +40,7 @@ func (w *CodeFileWriterImpl) Write(path string, content string) error {
 }
 
 type CodeGenerator interface {
-	HandleSchema(name string, schema *openapi3.Schema, writer CodeFileWriter)
+	HandleSchema(name string, schema *openapi3.Schema, writer CodeFileWriter, usedRefs map[string]bool)
 }
 
 func Generate(generator CodeGenerator, spec *OpenAPISpec, writer CodeFileWriter) {
@@ -54,7 +54,7 @@ func Generate(generator CodeGenerator, spec *OpenAPISpec, writer CodeFileWriter)
 
 	for name, schemaRef := range spec.GetSchemas() {
 		log.WithField("schema", name).Debug("Handling schema")
-		generator.HandleSchema(name, schemaRef.Value, writer)
+		generator.HandleSchema(name, schemaRef.Value, writer, make(map[string]bool))
 	}
 
 	log.Info("Code generation complete")

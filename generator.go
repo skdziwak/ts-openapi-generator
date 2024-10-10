@@ -8,24 +8,31 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type TsGenerator struct{}
+type TsGenerator struct {
+}
 
-func (g *TsGenerator) HandleSchema(name string, schema *openapi3.Schema, writer CodeFileWriter) {
+func NewTsGenerator() *TsGenerator {
+	return &TsGenerator{}
+}
+
+func (g *TsGenerator) HandleSchema(name string, schema *openapi3.Schema, writer CodeFileWriter, usedRefs map[string]bool) {
 	interfaceName := name + "Props"
 	className := name
 
-	interfaceContent := g.generateInterface(interfaceName, schema)
+	interfaceContent := g.generateInterface(interfaceName, schema, usedRefs)
 	classContent := g.generateClass(className, interfaceName, schema)
 
-	content := fmt.Sprintf("%s\n\n%s\n\nexport default %s;\n", interfaceContent, classContent, className)
-	writer.Write("models/"+name+".ts", content)
+	imports := g.generateImports(usedRefs)
+	content := fmt.Sprintf("%s\n\n%s\n\n%s\n\nexport default %s;\n", imports, interfaceContent, classContent, className)
+	trimmedContent := strings.TrimSpace(content)
+	writer.Write("models/"+name+".ts", trimmedContent)
 }
 
-func (g *TsGenerator) generateInterface(name string, schema *openapi3.Schema) string {
+func (g *TsGenerator) generateInterface(name string, schema *openapi3.Schema, usedRefs map[string]bool) string {
 	var properties []string
 	for propName, propSchema := range schema.Properties {
 		ref := propSchema.Ref
-		propType := g.getTypeScriptType(propSchema.Value, &ref)
+		propType := g.getTypeScriptType(propSchema.Value, &ref, usedRefs)
 		optional := !g.isRequired(propName, schema)
 		property := fmt.Sprintf("    %s%s: %s;", propName, g.optionalSuffix(optional), propType)
 		properties = append(properties, property)
@@ -53,7 +60,17 @@ func (g *TsGenerator) generateClass(className, interfaceName string, schema *ope
 }`, className, interfaceName, strings.Join(properties, "\n"), strings.Join(constructorParams, ", "), interfaceName, strings.Join(constructorAssignments, "\n"))
 }
 
-func (g *TsGenerator) getTypeScriptType(schema *openapi3.Schema, ref *string) string {
+func (g *TsGenerator) generateImports(usedRefs map[string]bool) string {
+	var imports []string
+	for ref := range usedRefs {
+		lastPart := strings.Split(ref, "/")
+		importName := lastPart[len(lastPart)-1] + "Props"
+		imports = append(imports, fmt.Sprintf("import { %s } from \"./%s\";", importName, lastPart[len(lastPart)-1]))
+	}
+	return strings.Join(imports, "\n")
+}
+
+func (g *TsGenerator) getTypeScriptType(schema *openapi3.Schema, ref *string, usedRefs map[string]bool) string {
 	switch {
 	case schema.Type.Is(openapi3.TypeString):
 		return "string"
@@ -63,7 +80,7 @@ func (g *TsGenerator) getTypeScriptType(schema *openapi3.Schema, ref *string) st
 		return "boolean"
 	case schema.Type.Is(openapi3.TypeArray):
 		if schema.Items != nil {
-			itemType := g.getTypeScriptType(schema.Items.Value, &schema.Items.Ref)
+			itemType := g.getTypeScriptType(schema.Items.Value, &schema.Items.Ref, usedRefs)
 			return fmt.Sprintf("%s[]", itemType)
 		} else {
 			logrus.Warnf("Schema items are nil for %s", schema.Title)
@@ -72,7 +89,9 @@ func (g *TsGenerator) getTypeScriptType(schema *openapi3.Schema, ref *string) st
 	case schema.Type.Is(openapi3.TypeObject):
 		if ref != nil && *ref != "" {
 			lastPart := strings.Split(*ref, "/")
-			return lastPart[len(lastPart)-1] + "Props"
+			refName := lastPart[len(lastPart)-1]
+			usedRefs[refName] = true
+			return refName + "Props"
 		} else {
 			logrus.Warnf("Schema title is empty for an object type")
 			return "Record<string, any>"
