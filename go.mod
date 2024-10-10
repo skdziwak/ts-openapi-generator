@@ -1,4 +1,4 @@
-module ts-openapi-generator
+module github.com/skdziwak/ts-openapi-generator
 
 go 1.22.1
 
