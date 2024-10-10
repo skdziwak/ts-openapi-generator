@@ -24,7 +24,8 @@ func (g *TsGenerator) HandleSchema(name string, schema *openapi3.Schema, writer 
 func (g *TsGenerator) generateInterface(name string, schema *openapi3.Schema) string {
 	var properties []string
 	for propName, propSchema := range schema.Properties {
-		propType := g.getTypeScriptType(propSchema.Value)
+		ref := propSchema.Ref
+		propType := g.getTypeScriptType(propSchema.Value, &ref)
 		optional := !g.isRequired(propName, schema)
 		property := fmt.Sprintf("    %s%s: %s;", propName, g.optionalSuffix(optional), propType)
 		properties = append(properties, property)
@@ -52,7 +53,7 @@ func (g *TsGenerator) generateClass(className, interfaceName string, schema *ope
 }`, className, interfaceName, strings.Join(properties, "\n"), strings.Join(constructorParams, ", "), interfaceName, strings.Join(constructorAssignments, "\n"))
 }
 
-func (g *TsGenerator) getTypeScriptType(schema *openapi3.Schema) string {
+func (g *TsGenerator) getTypeScriptType(schema *openapi3.Schema, ref *string) string {
 	switch {
 	case schema.Type.Is(openapi3.TypeString):
 		return "string"
@@ -62,14 +63,20 @@ func (g *TsGenerator) getTypeScriptType(schema *openapi3.Schema) string {
 		return "boolean"
 	case schema.Type.Is(openapi3.TypeArray):
 		if schema.Items != nil {
-			itemType := g.getTypeScriptType(schema.Items.Value)
+			itemType := g.getTypeScriptType(schema.Items.Value, &schema.Items.Ref)
 			return fmt.Sprintf("%s[]", itemType)
 		} else {
 			logrus.Warnf("Schema items are nil for %s", schema.Title)
 			return "any[]"
 		}
 	case schema.Type.Is(openapi3.TypeObject):
-		return "Record<string, any>"
+		if ref != nil && *ref != "" {
+			lastPart := strings.Split(*ref, "/")
+			return lastPart[len(lastPart)-1] + "Props"
+		} else {
+			logrus.Warnf("Schema title is empty for an object type")
+			return "Record<string, any>"
+		}
 	case schema.Type.Is(openapi3.TypeNull):
 		return "null"
 	default:
